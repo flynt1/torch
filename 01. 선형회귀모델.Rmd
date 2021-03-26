@@ -1,0 +1,79 @@
+### library
+```{r}
+library(torch)
+library(tidyverse)
+```
+
+### dataset
+```{r}
+set.seed(123)
+train= tibble(
+  x1= rnorm(100),
+  x2= rnorm(100),
+  y= 2*x1+3*x2+1+rnorm(100)*0.3) #기울기 2(x1), 3(x2) 와 절편 1
+train
+```
+### 통계함수를 이용한 모델 확인
+```{r}
+fit= lm(y~x1+x2, data= train)
+summary(fit)
+```
+
+# input data tensor
+```{r}
+(X.tensor= train[1:2] %>% as.matrix() %>% torch_tensor())
+```
+
+### ouput data tensor
+```{r}
+(Y.tensor= train$y %>% as.matrix(ncol=1) %>% torch_tensor())
+```
+
+### model, loss function, optimizer
+```{r}
+model= nn_linear(in_features = 2, out_features = 1, bias = T)
+loss.fun= nn_mse_loss()
+optimizer= optim_sgd(model$parameters, lr=0.1)
+```
+
+### training
+```{r}
+losses= vector()
+
+for(i in 1:100) {
+  optimizer$zero_grad()
+  y_pred= model(X.tensor)
+  loss= loss.fun(y_pred, Y.tensor)
+  loss$backward()
+  optimizer$step()
+  
+  losses= c(losses, loss %>% as_array())
+}
+```
+
+### model parameter
+```{r}
+model$parameters
+```
+
+### loss plotting
+```{r}
+tibble(
+  No= seq(1,100),
+  loss= losses) %>% 
+  ggplot(aes(x=No, y=loss))+geom_point()
+```
+
+
+```{r}
+losses
+```
+
+
+
+
+
+
+
+
+
