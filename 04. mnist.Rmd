@@ -1,0 +1,97 @@
+### library
+```{r}
+library(torch)
+library(tabnet)
+library(tidymodels)
+library(tidyverse)
+library(vip)
+```
+
+### data loading
+```{r}
+train= read_csv("./data/mnist_train.csv",
+                skip=1,
+                col_names = c("label", paste0("V",seq(1,784))),
+                col_types= cols(.default = col_integer()))
+
+test= read_csv("./data/mnist_test.csv",
+                skip=1,
+                col_names = c("label", paste0("V",seq(1,784))),
+                col_types= cols(.default = col_integer()))
+
+train$label= factor(train$label, ordered = TRUE)
+test$label= factor(test$label, ordered = TRUE)
+```
+
+
+### train tensor
+```{r}
+# target의 숫자 0에서 에러발생
+# factor화 숫자 1부터 10까지로 변경
+# target은1차원 벡터이다(소프트맥스-크로스엔트로피)
+
+X.train= train[2:785] %>% as.matrix() %>% torch_tensor(dtype = torch_float32())
+(Y.train= train$label %>% as.integer() %>% torch_tensor(dtype = torch_int64()))
+```
+
+### model, loss function, optimizer
+```{r}
+model= nn_linear(784, 10)
+loss.fun= nn_cross_entropy_loss()
+optimizer= optim_sgd(model$parameters, lr=0.01)
+```
+
+### fitting
+```{r}
+losses= vector()
+for(i in 1: 500){
+  optimizer$zero_grad()
+  y_pred= model(X.train)
+  loss= loss.fun(y_pred, Y.train)
+  loss$backward()
+  optimizer$step()
+  
+  losses= c(losses, loss %>% as_array)
+}
+```
+
+```{r}
+losses
+```
+
+
+### accuracy
+```{r}
+pred.test= test[2:785] %>% as.matrix() %>% torch_tensor(dtype = torch_float32()) %>% 
+  model(.)
+
+pred= torch_max(pred.test,2)
+
+df.acc=
+  tibble(
+    label= test$label %>% as.integer() %>% as.factor(),
+    pred= pred[[2]] %>% as_array() %>% as_factor())
+df.acc
+
+df.acc %>% accuracy(label, pred)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

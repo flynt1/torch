@@ -1,0 +1,110 @@
+### library
+```{r}
+library(torch)
+library(tidyverse)
+library(tabnet)
+library(tidymodels)
+library(vip)
+```
+### 데이터셋 준비하기 : 아리리스 분류(3중 분류)
+```{r}
+df= iris
+df
+```
+### split dataset
+```{r}
+split= initial_split(df, prop=0.8, strata = Species)
+Train= training(split)
+Test= testing(split)
+```
+
+### recipe 만들기
+```{r}
+# Target에는 0이 들어가지 않는다. factor를 그대로 수치화 한다.
+# crossentropy는 입력(n개)으로 부터, 출력(c개)의 확률을 반환한다.
+# 아이리스는 3개 정답에 대한 확률을 구한다.
+# 아리리스 3개 Target(1,2,3)에 대한 1의 확률, 2의 확률, 3의확률을 반환하면,
+# 가장 높은 확률을 가지는 열이 정답이 된다.
+
+rcp=
+recipe(Species ~ ., data= Train) %>% 
+  #step_integer(all_outcomes()) %>%
+  step_normalize(all_predictors())
+
+(rcp.train= rcp %>% prep %>% juice)
+rcp.test= rcp %>% prep %>% bake(new_data=Test)
+```
+### train tensor 만들기
+```{r}
+# target은1차원 벡터이다. (1개의 row를 갖는 벡터)
+(X.train= rcp.train[1:4] %>% as.matrix() %>% torch_tensor())
+(Y.train= rcp.train[5] %>% as_vector() %>% torch_tensor(dtype = torch_int64()))
+```
+
+
+### model, loss function, optimizer
+```{r}
+model= nn_linear(4,3,bias = T)
+loss.fun= nn_cross_entropy_loss()
+optimizer= optim_sgd(model$parameters, lr=0.01)
+```
+
+### fitting
+```{r}
+losses= vector()
+
+for(i in 1: 200){
+  optimizer$zero_grad()
+  y_pred= model(X.train)
+  loss= loss.fun(y_pred, Y.train)
+  loss$backward()
+  optimizer$step()
+  losses= c(losses, loss %>% as_array())}
+```
+
+### accuracy
+```{r}
+pred= model(rcp.test[1:4] %>% as.matrix() %>% torch_tensor())
+test.pred= torch_max(pred,2)
+
+df.acc=
+  tibble(
+    label= rcp.test$Species %>% as.integer() %>% as_factor() ,
+    pred= test.pred[[2]] %>% as_array() %>% as_factor())
+
+df.acc
+
+df.acc %>% accuracy(label, pred)
+```
+
+### tabnet
+```{r}
+mod= tabnet(epochs=200) %>% 
+  set_engine("torch", verbose=T) %>% 
+  set_mode("classification")
+```
+
+### workflow
+```{r}
+fit.torch= workflow() %>% 
+  add_model(mod) %>% 
+  add_recipe(rcp) %>% 
+  fit(Train)
+```
+### accuracy
+```{r}
+tibble(
+  label= Test$Species,
+  pred= predict(fit.torch,Test[1:4])$.pred_class) %>% 
+  accuracy(label, pred)
+```
+### vip
+```{r}
+fit.torch %>% pull_workflow_fit() %>% vip() + geom_col(fill="lightblue")
+```
+
+
+
+
+
+

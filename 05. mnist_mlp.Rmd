@@ -1,0 +1,143 @@
+### library
+```{r}
+library(torch)
+library(tidyverse)
+library(tidymodels)
+```
+
+### data loading
+```{r}
+train= read_csv("./data/mnist_train.csv",
+                skip=1,
+                col_names = c("label", paste0("V",seq(1,784))),
+                col_types= cols(.default = col_integer()))
+
+test= read_csv("./data/mnist_test.csv",
+                skip=1,
+                col_names = c("label", paste0("V",seq(1,784))),
+                col_types= cols(.default = col_integer()))
+
+train$label= factor(train$label, ordered = TRUE)
+test$label= factor(test$label, ordered = TRUE)
+```
+
+
+### train tensor
+```{r}
+# target의 숫자 0에서 에러발생
+# factor화 숫자 1부터 10까지로 변경
+# target은1차원 벡터이다(소프트맥스-크로스엔트로피)
+
+X.train= train[2:785] %>% as.matrix() %>% torch_tensor(dtype = torch_float32())
+(Y.train= train$label %>% as.integer() %>% torch_tensor(dtype = torch_int64()))
+X.test= test[2:785] %>% as.matrix() %>% torch_tensor(dtype = torch_float32())
+Y.test= test$label %>% as.integer() %>% torch_tensor(dtype = torch_int64())
+```
+
+### dataset & dataloader
+```{r}
+ds.train= tensor_dataset(X.train, Y.train)
+ds.test= tensor_dataset(X.test, Y.test)
+
+train.loader= dataloader(ds.train, batch_size= 4096, shuffle = T)
+test.loader= dataloader(ds.test, batch_size=4096)
+```
+
+
+### newwork config
+```{r}
+net= nn_module(
+  "mlp",
+  initialize= function(In,Out,k){
+    self$hidden1= nn_linear(In,k)
+    self$hidden2= nn_linear(k,k)
+    self$output= nn_linear(k,Out)},
+  forward= function(M){
+    M %>% 
+      self$hidden1() %>% 
+      nnf_relu() %>% 
+      nnf_dropout(p=0.5) %>% 
+      nnf_normalize() %>% 
+      self$hidden2() %>% 
+      nnf_relu() %>% 
+      nnf_dropout(p=0.5) %>% 
+      nnf_normalize() %>% 
+      self$output()}) 
+```
+
+### model, loss function, optimizer
+```{r}
+model= net(784,10,100)
+loss.fun= nn_cross_entropy_loss()
+optimizer= optim_adam(model$parameters)
+```
+
+### fitting
+```{r}
+train_losses= vector()
+test_losses= vector()
+
+for(i in 1:40){
+  for(b in enumerate(train.loader)){
+    optimizer$zero_grad()
+    y_pred= model(b[[1]])
+    loss= loss.fun(y_pred, b[[2]])
+    loss$backward()
+    optimizer$step()}
+  train_losses= c(train_losses, loss$item())
+  
+  for(b in enumerate(test.loader)){
+    model$eval()
+    y_pred= model(b[[1]])
+    loss= loss.fun(y_pred, b[[2]])
+    model$train()}
+  test_losses= c(test_losses, loss$item())}
+```
+
+### plot losses
+```{r}
+tibble(
+  No= seq(1,length(train_losses)),
+  train= train_losses,
+  test= test_losses) %>% 
+  pivot_longer(cols = c("train","test")) %>% 
+  ggplot(aes(x=No, y= value))+ geom_path(aes(color=name))
+```
+
+
+### accuracy
+```{r}
+pred.test= test[2:785] %>% as.matrix() %>% torch_tensor(dtype = torch_float32()) %>% 
+  model(.)
+
+pred= torch_max(pred.test,2)
+
+df.acc=
+  tibble(
+    label= test$label %>% as.integer() %>% as.factor(),
+    pred= pred[[2]] %>% as_array() %>% as_factor())
+df.acc
+
+df.acc %>% accuracy(label, pred)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

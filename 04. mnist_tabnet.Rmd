@@ -1,0 +1,63 @@
+```{r}
+library(tabnet)
+library(tidymodels)
+library(tidyverse)
+```
+
+### dataset loading
+```{r}
+df= read_csv("./data/mnist.csv")
+df$target= factor(df$target, ordered = T)
+```
+### split dataset
+```{r}
+split= initial_split(df, prop = 0.8, strata = target)
+train= training(split)
+test= testing(split)
+```
+
+### recipe
+```{r}
+rcp=
+  recipe(target ~ ., data= train)
+  
+rcp %>% prep %>% juice %>% select(target, everything())
+```
+### model
+```{r}
+model= tabnet(epochs = 500) %>% 
+  set_engine("torch") %>% 
+  set_mode("classification")
+```
+
+### workflow & fit
+```{r}
+model.fit= workflow() %>%
+  add_model(model) %>% 
+  add_recipe(rcp) %>% 
+  fit(data= train)
+```
+
+### prediction & accuracy
+```{r}
+df.pred=
+  tibble(
+    label= test$target,
+    pred= predict(model.fit, test[1:64]) %>% .$.pred_class)
+df.pred
+
+df.pred %>% accuracy(label, pred)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
